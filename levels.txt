@@ -1,0 +1,122 @@
+# Chess Puzzle - Niveles
+# ========================
+#
+# Piezas: N = caballo blanco (♘)   n = caballo negro (♞)
+#         B = alfil blanco (♗)     b = alfil negro (♝)
+#         R = torre blanca (♖)     r = torre negra (♜)
+#         Q = reina blanca (♕)     q = reina negra (♛)
+#         P = peón blanco (♙)      p = peón negro (♟)
+# . = vacío   x = muro   f g h i j k ... = casilla meta
+#
+# Objetivos:
+#   f = n             → pieza "n" debe llegar a la casilla "f"
+#   f, g, h = n       → pieza(s) "n" deben ocupar f, g y h al mismo tiempo (AND)
+#   f > g > h = n     → pieza "n" debe pasar por f, luego g, luego h, en orden (camino)
+#
+# Reglas:
+#   · NO se puede capturar NINGUNA pieza.
+#   · Piezas deslizantes (R, B, Q) se detienen antes de cualquier pieza.
+#   · Muros (x) bloquean el paso y no se pueden pisar.
+#   · Peones coronan automáticamente en reina al llegar a la última fila.
+#   · Sin turnos: mueves blancas y negras libremente.
+#
+# Vista desde negras:  # view: black
+
+
+=== 1 ===
+# BLACK KNIGHT — el caballo negro debe esquivar a todos y llegar a la meta
+nBBBBR
+NNNNRR
+xxxxRf
+f = n
+
+=== 2 ===
+# PAWN WAY TO CORONATION — haz coronar al peón y lleva la reina a la meta
+# view: black
+NNNN
+BBBB
+RRRR
+fxxp
+f = q
+
+=== 3 ===
+# JUMPING KNIGHT — navega entre muros con el caballo
+PPPP
+BRBR
+RBRB
+.xxx
+nxxf
+f = n
+
+=== 4 ===
+# DOUBLE CROSS — coloca dos caballos negros en las metas a la vez
+.NNN.
+B...B
+R.fgR
+..xx.
+n..n.
+f, g = n
+
+=== 5 ===
+# PILGRIM'S PATH — el caballo debe recorrer el camino en orden
+n...g
+..f..
+NBBNN
+RRB.B
+...Q.
+f > g = n
+
+=== 6 ===
+# FIVE GATES — coloca un caballo negro en cada una de las 5 puertas
+nNNnN
+.....
+BfghB
+..i..
+R...R
+f, g, h, i = n
+
+=== 7 ===
+# KNIGHT'S PILGRIMAGE — recorre las 4 estaciones en orden
+.......
+..j....
+...i...
+....h..
+.....g.
+......f
+BNNNNBR
+RNNNNRR
+...n...
+f > g > h > i > j = n
+
+=== 8 ===
+# SCATTERED STARS — ocupa 8 metas distribuidas por el tablero
+.N.f.B.m
+..Ng...R
+.Q.h.i..
+R.j...kB
+.B.N..N.
+..n..l..
+f, g, h, i, j, k, l, m = n
+
+=== 9 ===
+# THE LONG MARCH — secuencia de 5 pasos con el peón que corona
+...Q..
+..f...
+.g....
+...h..
+.....i
+...j..
+B.B.B.
+R.R.R.
+....p.
+f > g > h > i > j = q
+
+=== 10 ===
+# CHECKERBOARD SIEGE — 4 caballos negros, 4 metas
+n.N.n.
+.f..g.
+..h.i.
+N...N.
+....Q.
+..n.n.
+f, g, h, i = n

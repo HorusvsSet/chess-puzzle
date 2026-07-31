@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0E0D0B" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Chess Puzzle</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231A1815'/%3E%3Ctext x='50' y='72' font-size='62' text-anchor='middle' fill='%23E8C56D'%3E%E2%99%9E%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-icon">♞</div>
+        <div>
+          <h1>Chess Puzzle</h1>
+          <p class="subtitle" id="levels-subtitle">Cargando…</p>
+        </div>
+      </div>
+      <nav class="desktop-tabs" aria-label="Navegación">
+        <button class="tab active" data-tab="play">Jugar</button>
+        <button class="tab" data-tab="levels">Niveles</button>
+        <button class="tab" data-tab="rules">Reglas</button>
+      </nav>
+      <div class="level-badge" id="level-indicator">–</div>
+    </div>
+  </header>
+
+  <div class="swipe-toast" id="swipe-hint"></div>
+
+  <main class="container">
+    <section class="tab-panel active" id="tab-play">
+      <div class="play-layout">
+        <div class="board-panel">
+          <div class="board-toolbar">
+            <div class="toolbar-group">
+              <button class="tb-btn" id="btn-prev" aria-label="Anterior">‹</button>
+              <button class="tb-btn" id="btn-next" aria-label="Siguiente">›</button>
+            </div>
+            <div class="toolbar-group">
+              <button class="tb-btn" id="btn-undo">↶ Deshacer</button>
+              <button class="tb-btn" id="btn-reset">↻ Reiniciar</button>
+            </div>
+          </div>
+          <div class="board-wrap" id="board-wrap">
+            <div id="board" class="board"></div>
+          </div>
+          <div id="win-banner" class="win-banner hidden">
+            <div class="win-star">★</div>
+            <div class="win-body">
+              <p class="win-title">¡Nivel completado!</p>
+              <p class="win-sub" id="win-sub"></p>
+            </div>
+            <button class="tb-btn primary" id="btn-next-win">Siguiente ›</button>
+          </div>
+        </div>
+
+        <aside class="info-panel">
+          <div class="info-card">
+            <div class="info-label">Objetivo</div>
+            <p class="info-name" id="level-name">–</p>
+            <p class="info-desc" id="level-desc"></p>
+            <div class="info-goal" id="goal-line"></div>
+          </div>
+          <div class="info-stats">
+            <div class="stat-box">
+              <span class="stat-num" id="stat-moves">0</span>
+              <span class="stat-lbl">Movs</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-num" id="stat-size">–</span>
+              <span class="stat-lbl">Tablero</span>
+            </div>
+          </div>
+          <details class="info-card legend-box">
+            <summary>Leyenda</summary>
+            <div class="legend-list">
+              <div><span class="lsw light"></span> vacío</div>
+              <div><span class="lsw wall"></span> muro</div>
+              <div><span class="lsw goal"></span> meta</div>
+              <div><span class="lsw sel"></span> selección</div>
+              <div><span class="lsw move"></span> legal</div>
+            </div>
+          </details>
+        </aside>
+      </div>
+    </section>
+
+    <section class="tab-panel" id="tab-levels">
+      <div class="levels-grid" id="levels-grid"></div>
+    </section>
+
+    <section class="tab-panel" id="tab-rules">
+      <div class="rules-grid">
+        <div class="info-card">
+          <div class="info-label">Cómo jugar</div>
+          <ol>
+            <li>Toca una pieza para seleccionarla.</li>
+            <li>Los destinos legales se iluminan con puntos.</li>
+            <li><b>No se puede capturar</b> ninguna pieza.</li>
+            <li><b>Sin turnos:</b> mueve blancas y negras libremente.</li>
+            <li>Modos de meta: <b>simple</b> (f=n), <b>múltiple</b> (f,g=n), <b>camino</b> (f>g=n).</li>
+          </ol>
+        </div>
+        <div class="info-card">
+          <div class="info-label">Notación</div>
+          <div class="piece-grid">
+            <div><span class="p-glyph">♘</span> <code>N / n</code> Caballo</div>
+            <div><span class="p-glyph">♕</span> <code>Q / q</code> Reina</div>
+            <div><span class="p-glyph">♖</span> <code>R / r</code> Torre</div>
+            <div><span class="p-glyph">♗</span> <code>B / b</code> Alfil</div>
+            <div><span class="p-glyph">♙</span> <code>P / p</code> Peón</div>
+          </div>
+          <div class="rules-hint">
+            <p>MAYÚSCULA = blanca · minúscula = negra</p>
+            <p><code>.</code> vacío · <code>x</code> muro · <code>f</code> meta</p>
+            <p>Meta: <code>f = k</code></p>
+          </div>
+        </div>
+        <div class="info-card rules-full">
+          <div class="info-label">Movimiento</div>
+          <div class="move-grid">
+            <div><b>Meta simple</b><p>f = n — la pieza debe llegar a f.</p></div>
+            <div><b>AND (múltiple)</b><p>f, g = n — piezas en f Y g a la vez.</p></div>
+            <div><b>Camino (SEQ)</b><p>f &gt; g = n — pasar por f, luego g.</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav">
+    <button class="tab active" data-tab="play">Jugar</button>
+    <button class="tab" data-tab="levels">Niveles</button>
+    <button class="tab" data-tab="rules">Reglas</button>
+  </nav>
+
+  <script src="game.js"></script>
+</body>
+</html>
