@@ -49,13 +49,14 @@ nxxf
 f = n
 
 === 4 ===
-# DOUBLE CROSS — coloca dos caballos negros en las metas a la vez
-.NNN.
-B...B
-R.fgR
-..xx.
-n..n.
-f, g = n
+# CONQUER KNIGHT — pasa el caballo por todas las casillas marcadas
+fghi
+xxxx
+BBBB
+RRRR
+PPP.
+xxxn
+f > g > h > i = n
 
 === 5 ===
 # PILGRIM'S PATH — el caballo debe visitar todas las metas
