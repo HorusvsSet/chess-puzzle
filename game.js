@@ -19,8 +19,8 @@
   // Goal syntax:
   //   f = n          → single: piece "n" must reach marker "f"
   //   f,g = n        → AND:   piece(s) "n" must occupy ALL markers f,g simultaneously
-  //   f > g = n      → SEQ:   piece "n" must visit f, then g, in order (can be same piece)
-  //   f > g > h = n  → longer sequence
+  //   f > g = n      → SEQ:   piece "n" must visit all markers in ANY order (checklist)
+  //   f > g > h = n  → longer checklist (order-free)
 
   function parseGoalLine(line) {
     // AND:  f,g,h = n
@@ -196,12 +196,14 @@
           if (ch !== g.piece) return false;
         }
       } else if (g.type === 'seq') {
-        // Last marker must have the piece; previous markers don't need it now
-        // (we track sequential progress in state, but final win = last marker occupied)
-        const lastM = g.markers[g.markers.length-1];
-        const pos = markerPos[lastM];
-        const ch = board[pos.row][pos.col];
-        if (ch !== g.piece) return false;
+        // SEQ = checklist: must visit ALL markers in any order, tracking via visited set.
+        // Win is checked in doMove via seqVisited — here we just verify the piece is on a marker.
+        for (const m of g.markers) {
+          const pos = markerPos[m];
+          const ch = board[pos.row][pos.col];
+          if (ch === g.piece) return true; // piece is on some goal — let doMove handle win
+        }
+        return false;
       }
     }
     return true;
@@ -213,8 +215,8 @@
     board:null, markers:null, goals:null, markerPos:null,
     original:null, selected:null, legalDest:[], history:[],
     moves:0, won:false, viewBlack:false,
-    // SEQ tracking: for each seq goal, which step we're on (0-based index of next marker to visit)
-    seqProgress:null,
+    // SEQ tracking: for each seq goal, Set of marker keys already visited (order-free)
+    seqVisited:null,
   };
   const cloneGrid = g => g.map(r=>r.slice());
 
@@ -260,17 +262,17 @@
     const lvl=state.levels[idx];
     // Build markers Set for cellFree
     const markers = new Set(lvl.allMarkers);
-    // Init seq progress
-    const seqProgress = {};
+    // Init seq visited sets (empty — nothing visited yet)
+    const seqVisited = {};
     for (const g of lvl.goals) {
-      if (g.type==='seq') seqProgress[g.markers.join('>')] = 0;
+      if (g.type==='seq') seqVisited[g.markers.join('>')] = new Set();
     }
     Object.assign(state,{
       levelIndex:idx, viewBlack:!!lvl.viewBlack,
       markers, goals:lvl.goals, markerPos:lvl.markerPos,
       board:cloneGrid(lvl.grid), original:cloneGrid(lvl.grid),
       selected:null, legalDest:[], history:[], moves:0, won:false,
-      seqProgress,
+      seqVisited,
     });
     render();
   }
@@ -300,7 +302,9 @@
   function doMove(sr,sc,dr,dc){
     state.history.push({
       board:cloneGrid(state.board), moves:state.moves,
-      seqProgress: state.seqProgress ? {...state.seqProgress} : null,
+      seqVisited: state.seqVisited ? JSON.parse(JSON.stringify(
+        Object.fromEntries(Object.entries(state.seqVisited).map(([k,v])=>[k,[...v]]))
+      )) : null,
     });
     const piece=state.board[sr][sc];
     // Restore marker if leaving a marker cell
@@ -319,22 +323,31 @@
     if (shouldCoronate(state.board,dr,dc,state.viewBlack))
       state.board[dr][dc]=isUpper(piece)?'Q':'q';
 
-    // Update SEQ progress
-    if (state.seqProgress) {
+    // Update SEQ visited (order-free — mark any unvisited marker)
+    if (state.seqVisited) {
       for (const g of state.goals) {
         if (g.type!=='seq') continue;
         const key=g.markers.join('>');
-        const cur=state.seqProgress[key];
-        const nextM=g.markers[cur];
-        const mp=state.markerPos[nextM];
-        if (dr===mp.row&&dc===mp.col && state.board[dr][dc]===g.piece) {
-          state.seqProgress[key] = cur+1;
+        for (const m of g.markers) {
+          const mp=state.markerPos[m];
+          if (dr===mp.row&&dc===mp.col && state.board[dr][dc]===g.piece) {
+            state.seqVisited[key].add(m);
+          }
         }
       }
     }
 
     state.selected=null; state.legalDest=[];
-    state.won=checkWin(state.board, state.goals, state.markerPos);
+    // SEQ win: all markers visited?
+    let allSeqDone = true;
+    if (state.seqVisited) {
+      for (const g of state.goals) {
+        if (g.type!=='seq') continue;
+        const key=g.markers.join('>');
+        if (state.seqVisited[key].size < g.markers.length) { allSeqDone = false; break; }
+      }
+    }
+    state.won=checkWin(state.board, state.goals, state.markerPos) && allSeqDone;
     render();
   }
 
@@ -342,7 +355,12 @@
     if (!state.history.length) return;
     const p=state.history.pop();
     state.board=p.board; state.moves=p.moves;
-    if (p.seqProgress) state.seqProgress=p.seqProgress;
+    if (p.seqVisited) {
+      state.seqVisited = {};
+      for (const [k,v] of Object.entries(p.seqVisited)) {
+        state.seqVisited[k] = new Set(v);
+      }
+    }
     state.selected=null; state.legalDest=[]; state.won=false;
     render();
   }
@@ -352,7 +370,7 @@
     state.selected=null; state.legalDest=[]; state.won=false;
     // Reset seq progress
     for (const g of state.goals) {
-      if (g.type==='seq') state.seqProgress[g.markers.join('>')]=0;
+      if (g.type==='seq') state.seqVisited[g.markers.join('>')]=new Set();
     }
     render();
   }
@@ -478,10 +496,10 @@
       if (g.type==='and') {
         ts.textContent='Coloca '+colorArticle(g.piece)+' '+colorName(g.piece)+' '+(NAME[pieceType(g.piece)]||'').toLowerCase()+' en TODAS:';
       } else if (g.type==='seq') {
-        ts.textContent='Pasa con '+colorArticle(g.piece)+' '+colorName(g.piece)+' '+(NAME[pieceType(g.piece)]||'').toLowerCase()+' por:';
+        ts.textContent='Visita con '+colorArticle(g.piece)+' '+colorName(g.piece)+' '+(NAME[pieceType(g.piece)]||'').toLowerCase()+' todas:';
         // Show progress
         const key=g.markers.join('>');
-        const cur=state.seqProgress?.(key)??0;
+        const cur=state.seqVisited?.(key)?.size??0;
         if (cur>0 && cur<g.markers.length) {
           const pg=document.createElement('span');pg.className='seq-progress';
           pg.textContent=' ('+cur+'/'+(g.markers.length)+')';
@@ -495,11 +513,11 @@
       for (let i=0;i<g.markers.length;i++) {
         const m=g.markers[i];
         const mp=lvl.markerPos[m];
-        // Check if completed (for seq)
+        // Check if completed (for seq — order-free visited)
         let done=false;
         if (g.type==='seq') {
           const key=g.markers.join('>');
-          done = i < (state.seqProgress?.[key]??0);
+          done = state.seqVisited?.[key]?.has(m) ?? false;
         }
         const chip=document.createElement('span');
         chip.className='goal-chip'+(done?' done':'');

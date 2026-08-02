@@ -11,7 +11,7 @@
 # Objetivos:
 #   f = n             → pieza "n" debe llegar a la casilla "f"
 #   f, g, h = n       → pieza(s) "n" deben ocupar f, g y h al mismo tiempo (AND)
-#   f > g > h = n     → pieza "n" debe pasar por f, luego g, luego h, en orden (camino)
+#   f > g > h = n     → pieza "n" debe visitar todas las casillas, en cualquier orden
 #
 # Reglas:
 #   · NO se puede capturar NINGUNA pieza.
@@ -58,7 +58,7 @@ n..n.
 f, g = n
 
 === 5 ===
-# PILGRIM'S PATH — el caballo debe recorrer el camino en orden
+# PILGRIM'S PATH — el caballo debe visitar todas las metas
 n...g
 ..f..
 NBBNN
@@ -76,7 +76,7 @@ R...R
 f, g, h, i = n
 
 === 7 ===
-# KNIGHT'S PILGRIMAGE — recorre las 4 estaciones en orden
+# KNIGHT'S PILGRIMAGE — visita las 5 estaciones
 .......
 ..j....
 ...i...
@@ -99,7 +99,7 @@ R.j...kB
 f, g, h, i, j, k, l, m = n
 
 === 9 ===
-# THE LONG MARCH — secuencia de 5 pasos con el peón que corona
+# THE LONG MARCH — visita las 5 metas y corona
 ...Q..
 ..f...
 .g....
