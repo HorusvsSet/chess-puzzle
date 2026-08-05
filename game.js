@@ -63,11 +63,18 @@
       const hdr = line.match(/^\s*={2,}\s*(.+?)\s*={2,}\s*$/);
       if (hdr) {
         finish();
-        cur = { name:hdr[1], desc:'', rows:[], goals:[], viewBlack:false };
+        cur = { name:hdr[1], desc:'', rows:[], goals:[], viewBlack:false, markerDecls:{} };
         continue;
       }
       if (!cur) continue;
       if (/^\s*#\s*view:\s*black\s*$/i.test(line)) { cur.viewBlack = true; continue; }
+      // Marker position override: # @f=2,3
+      const md = line.match(/^\s*#\s*@([a-z])\s*=\s*(\d+)\s*,\s*(\d+)\s*$/);
+      if (md) {
+        if (!cur.markerDecls) cur.markerDecls = {};
+        cur.markerDecls[md[1]] = { row: Number(md[2]), col: Number(md[3]) };
+        continue;
+      }
       if (/^\s*#/.test(line)) {
         cur.desc = cur.desc ? cur.desc+' '+line.replace(/^\s*#\s?/,'') : line.replace(/^\s*#\s?/,'');
         continue;
@@ -81,7 +88,7 @@
     return levels;
   }
 
-  function buildLevel({ name, desc, rows, goals, viewBlack }) {
+  function buildLevel({ name, desc, rows, goals, viewBlack, markerDecls }) {
     while (rows.length && !rows[0].trim()) rows.shift();
     while (rows.length && !rows[rows.length-1].trim()) rows.pop();
     if (!rows.length) throw new Error('Sin filas');
@@ -89,14 +96,21 @@
     for (const r of rows) if (r.length!==W) throw new Error('Filas desiguales');
     const grid = rows.map(r => r.split(''));
 
-    // Validate all markers exist exactly once on the grid
+    // Validate all markers exist on the grid or have a declared position
     const allMarkers = new Set();
     for (const g of goals) for (const m of g.markers) allMarkers.add(m);
+    const decl = markerDecls || {};
+    for (const mc of Object.keys(decl)) {
+      if (decl[mc].row < 0 || decl[mc].row >= grid.length || decl[mc].col < 0 || decl[mc].col >= W)
+        throw new Error(`Marcador '${mc}' fuera del tablero en @${mc}=${decl[mc].row},${decl[mc].col}`);
+    }
     for (const m of allMarkers) {
+      // Declared markers may be hidden under pieces — skip grid count check
+      if (decl[m]) continue;
       let cnt = 0;
       for (let r=0; r<grid.length; r++) for (let c=0; c<W; c++)
         if (grid[r][c]===m) cnt++;
-      if (cnt!==1) throw new Error(`Marcador '${m}' debe aparecer 1 vez (${cnt})`);
+      if (cnt!==1) throw new Error(`Marcador '${m}' debe aparecer 1 vez (${cnt}). Usa # @${m}=fila,col si está bajo una pieza.`);
     }
     // Validate characters
     for (let r=0; r<grid.length; r++) for (let c=0; c<W; c++) {
@@ -118,11 +132,15 @@
       }
     }
 
-    // Build marker lookup
+    // Build marker lookup — use declared positions where provided
     const markerPos = {};
     for (const m of allMarkers) {
-      for (let r=0; r<grid.length; r++) for (let c=0; c<W; c++)
-        if (grid[r][c]===m) markerPos[m] = { row:r, col:c };
+      if (decl[m]) {
+        markerPos[m] = decl[m];
+      } else {
+        for (let r=0; r<grid.length; r++) for (let c=0; c<W; c++)
+          if (grid[r][c]===m) markerPos[m] = { row:r, col:c };
+      }
     }
 
     return {
