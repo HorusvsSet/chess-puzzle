@@ -43,6 +43,7 @@
             <div class="toolbar-group">
               <button class="tb-btn" id="btn-undo">↶ Deshacer</button>
               <button class="tb-btn" id="btn-reset">↻ Reiniciar</button>
+              <button class="tb-btn tb-warn" id="btn-reset-progress" title="Borrar todo el progreso">🗑 Progreso</button>
             </div>
           </div>
           <div class="board-wrap" id="board-wrap">
@@ -55,6 +56,12 @@
               <p class="win-sub" id="win-sub"></p>
             </div>
             <button class="tb-btn primary" id="btn-next-win">Siguiente ›</button>
+          </div>
+          <div class="key-hint">
+            <span><kbd>←</kbd> <kbd>→</kbd> niveles</span>
+            <span><kbd>Ctrl+Z</kbd> deshacer</span>
+            <span><kbd>R</kbd> reiniciar</span>
+            <span><kbd>Esc</kbd> deseleccionar</span>
           </div>
         </div>
 
@@ -102,7 +109,7 @@
             <li>Los destinos legales se iluminan con puntos.</li>
             <li><b>No se puede capturar</b> ninguna pieza.</li>
             <li><b>Sin turnos:</b> mueve blancas y negras libremente.</li>
-            <li>Modos de meta: <b>simple</b> (f=n), <b>múltiple</b> (f,g=n), <b>camino</b> (f>g=n).</li>
+            <li>Modos de meta: <b>simple</b> (f=n), <b>múltiple</b> (f,g=n), <b>checklist</b> (f·g=n, sin orden fijo).</li>
           </ol>
         </div>
         <div class="info-card">
@@ -125,7 +132,7 @@
           <div class="move-grid">
             <div><b>Meta simple</b><p>f = n — la pieza debe llegar a f.</p></div>
             <div><b>AND (múltiple)</b><p>f, g = n — piezas en f Y g a la vez.</p></div>
-            <div><b>Camino (SEQ)</b><p>f &gt; g = n — pasar por f, luego g.</p></div>
+            <div><b>Checklist (SEQ)</b><p>f · g = n — visitar todas las metas, en cualquier orden.</p></div>
           </div>
         </div>
       </div>

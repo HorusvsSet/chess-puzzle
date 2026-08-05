@@ -1,6 +1,6 @@
 /* ============================================================
    Chess Puzzle – game engine (vanilla JS, mobile-first)
-   v4: multi-goal (AND & SEQ), no captures, N/knight notation
+   v5: multi-goal (AND & SEQ order-free), polished UI
    ============================================================ */
 
 (() => {
@@ -212,13 +212,91 @@
   // ── State ──
   const state = {
     levels:[], levelIndex:0,
-    board:null, markers:null, goals:null, markerPos:null,
+    board:null, markers:null, allMarkers:null, goals:null, markerPos:null,
     original:null, selected:null, legalDest:[], history:[],
     moves:0, won:false, viewBlack:false,
     // SEQ tracking: for each seq goal, Set of marker keys already visited (order-free)
     seqVisited:null,
+    // Progress: Set of completed level indices
+    completed:new Set(),
   };
   const cloneGrid = g => g.map(r=>r.slice());
+
+  // ── Progress persistence ──
+  const STORAGE_KEY = 'chess-puzzle-progress';
+  const MAX_HISTORY = 50; // cap history entries to save space
+  function saveProgress() {
+    try {
+      const seqRaw = {};
+      if (state.seqVisited) {
+        for (const [k,v] of Object.entries(state.seqVisited)) seqRaw[k] = [...v];
+      }
+      // Trim and serialize history (keep last MAX_HISTORY moves)
+      const hist = state.history.slice(-MAX_HISTORY).map(h => ({
+        board: h.board,
+        moves: h.moves,
+        seqVisited: h.seqVisited ? Object.fromEntries(
+          Object.entries(h.seqVisited).map(([k,v]) => [k, [...v]])
+        ) : null,
+      }));
+      const data = {
+        completed: [...state.completed],
+        lastLevel: state.levelIndex,
+        board: state.board,
+        original: state.original,
+        moves: state.moves,
+        history: hist,
+        seqVisited: seqRaw,
+        won: state.won,
+        viewBlack: state.viewBlack,
+        updated: new Date().toISOString(),
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch(e) { /* localStorage not available */ }
+  }
+  function loadProgress(maxLevels) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return { completed: new Set(), lastLevel: 0, saved: null };
+      const data = JSON.parse(raw);
+      const completed = new Set((data.completed||[]).filter(i => i>=0 && i<maxLevels));
+      const lastLevel = Math.min(data.lastLevel||0, maxLevels-1);
+      // Reconstruct seqVisited Sets from arrays
+      let seqVisited = null;
+      if (data.seqVisited) {
+        seqVisited = {};
+        for (const [k,v] of Object.entries(data.seqVisited)) seqVisited[k] = new Set(v);
+      }
+      // Reconstruct history with seqVisited Sets
+      let history = null;
+      if (data.history) {
+        history = data.history.map(h => {
+          const sv = {};
+          if (h.seqVisited) {
+            for (const [k,v] of Object.entries(h.seqVisited)) sv[k] = new Set(v);
+          }
+          return { board: h.board, moves: h.moves, seqVisited: sv };
+        });
+      }
+      const saved = (data.board && data.original) ? {
+        board: data.board,
+        original: data.original,
+        moves: data.moves || 0,
+        history: history || [],
+        seqVisited: seqVisited || {},
+        won: data.won || false,
+        viewBlack: data.viewBlack || false,
+      } : null;
+      return { completed, lastLevel, saved };
+    } catch(e) { return { completed: new Set(), lastLevel: 0, saved: null }; }
+  }
+  function resetProgress() {
+    try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
+    state.completed = new Set();
+    subtitle.textContent = state.levels.length+(state.levels.length===1?' nivel':' niveles');
+    loadLevel(0);
+    showToast('Progreso reiniciado');
+  }
 
   // ── DOM ──
   const $ = id => document.getElementById(id);
@@ -249,31 +327,49 @@
       const lvls=parseLevels(await res.text());
       if (!lvls.length) throw new Error('Sin niveles');
       state.levels=lvls;
-      subtitle.textContent=lvls.length+(lvls.length===1?' nivel':' niveles');
-      loadLevel(0);
+      // Restore progress from localStorage
+      const { completed, lastLevel, saved } = loadProgress(lvls.length);
+      state.completed = completed;
+      subtitle.textContent=lvls.length+(lvls.length===1?' nivel':' niveles')+
+        (completed.size?' · '+completed.size+' ✓':'')+
+        (completed.size===lvls.length?' 🏆':'');
+      // Start from last played level (or first uncompleted, or 0)
+      let startIdx = lastLevel;
+      if (completed.has(startIdx) && startIdx < lvls.length-1) {
+        for (let i=startIdx+1; i<lvls.length; i++) {
+          if (!completed.has(i)) { startIdx = i; break; }
+        }
+      }
+      loadLevel(startIdx, saved && saved.original ? saved : null);
     } catch(e) {
       subtitle.textContent='Error: '+e.message;
       boardEl.innerHTML='<div style="padding:40px;color:var(--coral);font-size:13px;text-align:center">No se pudo cargar <code>levels.txt</code>.<br><br>Ejecuta con un servidor<br>(<code>python -m http.server</code>)<br>o súbelo a GitHub Pages.</div>';
     }
   }
 
-  function loadLevel(idx) {
+  function loadLevel(idx, saved) {
     if (idx<0||idx>=state.levels.length) return;
     const lvl=state.levels[idx];
-    // Build markers Set for cellFree
     const markers = new Set(lvl.allMarkers);
-    // Init seq visited sets (empty — nothing visited yet)
     const seqVisited = {};
     for (const g of lvl.goals) {
       if (g.type==='seq') seqVisited[g.markers.join('>')] = new Set();
     }
+    // Restore saved board state if available and NOT already won
+    const useSaved = saved && saved.board && !saved.won && saved.board.length === lvl.H && saved.board[0].length === lvl.W;
     Object.assign(state,{
-      levelIndex:idx, viewBlack:!!lvl.viewBlack,
-      markers, goals:lvl.goals, markerPos:lvl.markerPos,
-      board:cloneGrid(lvl.grid), original:cloneGrid(lvl.grid),
-      selected:null, legalDest:[], history:[], moves:0, won:false,
-      seqVisited,
+      levelIndex:idx, viewBlack: useSaved ? saved.viewBlack : !!lvl.viewBlack,
+      markers, allMarkers:lvl.allMarkers,
+      goals:lvl.goals, markerPos:lvl.markerPos,
+      board: useSaved ? cloneGrid(saved.board) : cloneGrid(lvl.grid),
+      original: useSaved ? cloneGrid(saved.original) : cloneGrid(lvl.grid),
+      selected:null, legalDest:[],
+      history: useSaved ? saved.history.map(h=>({board:cloneGrid(h.board), moves:h.moves, seqVisited:h.seqVisited})) : [],
+      moves: useSaved ? saved.moves : 0,
+      won: useSaved ? saved.won : false,
+      seqVisited: useSaved ? saved.seqVisited : seqVisited,
     });
+    saveProgress();
     render();
   }
 
@@ -295,6 +391,7 @@
   function selectPiece(r,c){
     state.selected=[r,c];
     state.legalDest=legalMoves(state.board,r,c,state.markers,state.viewBlack);
+    if(!state.legalDest.length) showToast('Sin movimientos — '+colorArticle(state.board[r][c])+' '+colorName(state.board[r][c])+' bloquead'+((state.board[r][c]||'').toUpperCase()===state.board[r][c]?'o':'a'));
     render();
   }
   function deselect(){ state.selected=null; state.legalDest=[]; render(); }
@@ -348,6 +445,16 @@
       }
     }
     state.won=checkWin(state.board, state.goals, state.markerPos) && allSeqDone;
+    // Save progress on win
+    if (state.won) {
+      state.completed.add(state.levelIndex);
+      // Update subtitle
+      subtitle.textContent=state.levels.length+' niveles · '+
+        state.completed.size+' ✓'+
+        (state.completed.size===state.levels.length?' 🏆':'');
+    }
+    // Always save full state for resume
+    saveProgress();
     render();
   }
 
@@ -362,16 +469,17 @@
       }
     }
     state.selected=null; state.legalDest=[]; state.won=false;
+    saveProgress();
     render();
   }
 
   function reset(){
     state.board=cloneGrid(state.original); state.moves=0; state.history=[];
     state.selected=null; state.legalDest=[]; state.won=false;
-    // Reset seq progress
     for (const g of state.goals) {
       if (g.type==='seq') state.seqVisited[g.markers.join('>')]=new Set();
     }
+    saveProgress();
     render();
   }
 
@@ -380,7 +488,22 @@
   btnNextWin.onclick=()=>{if(state.levelIndex<state.levels.length-1)loadLevel(state.levelIndex+1);};
   btnUndo.onclick=undo;
   btnReset.onclick=reset;
+  // ── Reset progress ──
+  const btnResetProgress = document.getElementById('btn-reset-progress');
+  if (btnResetProgress) {
+    btnResetProgress.onclick = () => {
+      if (confirm('¿Borrar todo el progreso? Se perderán los niveles completados y la posición actual.')) {
+        resetProgress();
+      }
+    };
+  }
 
+  // ── Toast ──
+  let toastTmr;
+  function showToast(msg){
+    swipeHint.textContent=msg; swipeHint.classList.add('show');
+    clearTimeout(toastTmr); toastTmr=setTimeout(()=>swipeHint.classList.remove('show'),1800);
+  }
   // ── Swipe ──
   let tx=0,ty=0,handled=false;
   boardWrap.addEventListener('touchstart',e=>{
@@ -431,8 +554,7 @@
       for(let vc=0;vc<W;vc++){
         const r=state.viewBlack?H-1-vr:vr, c=state.viewBlack?W-1-vc:vc;
         const ch=state.board[r][c], dark=(r+c)%2===1;
-        const isGoal = state.markers.has(ch) || (ch!=='x' && state.markerPos && Object.values(state.markerPos).some(mp=>mp.row===r&&mp.col===c));
-        // Check if this cell is a goal marker (either the marker itself or a piece sitting on a marker position)
+        // ¿Meta? — marcador vacío o pieza sobre posición meta
         let goalCell = false;
         if (!isPiece(ch) || !GLYPH[ch]) {
           goalCell = state.markers.has(ch);
@@ -523,7 +645,7 @@
         chip.className='goal-chip'+(done?' done':'');
         chip.textContent=m;
         if (g.type==='seq' && i<g.markers.length-1) {
-          const arr=document.createElement('span');arr.className='seq-arrow';arr.textContent=' → ';
+          const arr=document.createElement('span');arr.className='seq-arrow';arr.textContent=' · ';
           chips.appendChild(chip);
           chips.appendChild(arr);
         } else {
@@ -556,7 +678,7 @@
     levelsGrid.innerHTML='';
     state.levels.forEach((lvl,i)=>{
       const card=document.createElement('div');
-      card.className='level-card'+(i===state.levelIndex?' current':'');
+      card.className='level-card'+(i===state.levelIndex?' current':'')+(state.completed.has(i)?' completed':'');
       card.onclick=()=>{loadLevel(i);switchTab('play');};
       const thumb=document.createElement('div');thumb.className='thumb';
       const H=lvl.grid.length,W=lvl.grid[0].length;
@@ -580,10 +702,10 @@
       let goalStr='';
       for (const g of lvl.goals) {
         if (goalStr) goalStr+=' · ';
-        goalStr += (GLYPH[g.piece]||g.piece)+' → '+g.markers.join(g.type==='seq'?'>':',');
+        goalStr += (GLYPH[g.piece]||g.piece)+' · '+g.markers.join(g.type==='seq'?'>':',');
       }
       const gi=document.createElement('span');gi.textContent=goalStr;
-      const ix=document.createElement('span');ix.className='idx';ix.textContent='#'+(i+1);
+      const ix=document.createElement('span');ix.className='idx';ix.textContent=(state.completed.has(i)?'✓ ':'')+'#'+(i+1);
       meta.append(gi,ix);
       card.append(thumb,title,desc,meta);
       levelsGrid.appendChild(card);
