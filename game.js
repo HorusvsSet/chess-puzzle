@@ -224,14 +224,13 @@
 
   // ── Progress persistence ──
   const STORAGE_KEY = 'chess-puzzle-progress';
-  const MAX_HISTORY = 50; // cap history entries to save space
+  const MAX_HISTORY = 50;
   function saveProgress() {
     try {
       const seqRaw = {};
       if (state.seqVisited) {
         for (const [k,v] of Object.entries(state.seqVisited)) seqRaw[k] = [...v];
       }
-      // Trim and serialize history (keep last MAX_HISTORY moves)
       const hist = state.history.slice(-MAX_HISTORY).map(h => ({
         board: h.board,
         moves: h.moves,
@@ -239,63 +238,65 @@
           Object.entries(h.seqVisited).map(([k,v]) => [k, [...v]])
         ) : null,
       }));
-      const data = {
-        completed: [...state.completed],
-        lastLevel: state.levelIndex,
-        board: state.board,
-        original: state.original,
-        moves: state.moves,
-        history: hist,
-        seqVisited: seqRaw,
-        won: state.won,
+      // Read existing data, update only this level's slot
+      const existing = (()=>{
+        try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
+        catch(_) { return {}; }
+      })();
+      if (!existing.positions) existing.positions = {};
+      existing.positions[state.levelIndex] = {
+        board: state.board, original: state.original,
+        moves: state.moves, history: hist,
+        seqVisited: seqRaw, won: state.won,
         viewBlack: state.viewBlack,
-        updated: new Date().toISOString(),
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      existing.completed = [...state.completed];
+      existing.lastLevel = state.levelIndex;
+      existing.updated = new Date().toISOString();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
     } catch(e) { /* localStorage not available */ }
   }
   function loadProgress(maxLevels) {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return { completed: new Set(), lastLevel: 0, saved: null };
+      if (!raw) return { completed: new Set(), lastLevel: 0 };
       const data = JSON.parse(raw);
       const completed = new Set((data.completed||[]).filter(i => i>=0 && i<maxLevels));
       const lastLevel = Math.min(data.lastLevel||0, maxLevels-1);
+      return { completed, lastLevel };
+    } catch(e) { return { completed: new Set(), lastLevel: 0 }; }
+  }
+  // Read saved position for a specific level directly from localStorage
+  function getSavedPosition(idx) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      const pos = (data.positions && data.positions[idx]) ? data.positions[idx] : null;
+      if (!pos || !pos.board || pos.won) return null;
       // Reconstruct seqVisited Sets from arrays
-      let seqVisited = null;
-      if (data.seqVisited) {
-        seqVisited = {};
-        for (const [k,v] of Object.entries(data.seqVisited)) seqVisited[k] = new Set(v);
+      let sv = {};
+      if (pos.seqVisited) {
+        for (const [k,v] of Object.entries(pos.seqVisited)) sv[k] = new Set(v);
       }
-      // Reconstruct history with seqVisited Sets
-      let history = null;
-      if (data.history) {
-        history = data.history.map(h => {
-          const sv = {};
+      // Reconstruct history with Sets
+      let hist = [];
+      if (pos.history) {
+        hist = pos.history.map(h => {
+          const hsv = {};
           if (h.seqVisited) {
-            for (const [k,v] of Object.entries(h.seqVisited)) sv[k] = new Set(v);
+            for (const [k,v] of Object.entries(h.seqVisited)) hsv[k] = new Set(v);
           }
-          return { board: h.board, moves: h.moves, seqVisited: sv };
+          return { board: h.board, moves: h.moves, seqVisited: hsv };
         });
       }
-      const saved = (data.board && data.original) ? {
-        board: data.board,
-        original: data.original,
-        moves: data.moves || 0,
-        history: history || [],
-        seqVisited: seqVisited || {},
-        won: data.won || false,
-        viewBlack: data.viewBlack || false,
-      } : null;
-      return { completed, lastLevel, saved };
-    } catch(e) { return { completed: new Set(), lastLevel: 0, saved: null }; }
-  }
-  function resetProgress() {
-    try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
-    state.completed = new Set();
-    subtitle.textContent = state.levels.length+(state.levels.length===1?' nivel':' niveles');
-    loadLevel(0);
-    showToast('Progreso reiniciado');
+      return {
+        board: pos.board, original: pos.original,
+        moves: pos.moves || 0, history: hist,
+        seqVisited: sv, won: pos.won || false,
+        viewBlack: pos.viewBlack || false,
+      };
+    } catch(e) { return null; }
   }
 
   // ── DOM ──
@@ -328,7 +329,7 @@
       if (!lvls.length) throw new Error('Sin niveles');
       state.levels=lvls;
       // Restore progress from localStorage
-      const { completed, lastLevel, saved } = loadProgress(lvls.length);
+      const { completed, lastLevel } = loadProgress(lvls.length);
       state.completed = completed;
       subtitle.textContent=lvls.length+(lvls.length===1?' nivel':' niveles')+
         (completed.size?' · '+completed.size+' ✓':'')+
@@ -340,14 +341,14 @@
           if (!completed.has(i)) { startIdx = i; break; }
         }
       }
-      loadLevel(startIdx, saved && saved.original ? saved : null);
+      loadLevel(startIdx);
     } catch(e) {
       subtitle.textContent='Error: '+e.message;
       boardEl.innerHTML='<div style="padding:40px;color:var(--coral);font-size:13px;text-align:center">No se pudo cargar <code>levels.txt</code>.<br><br>Ejecuta con un servidor<br>(<code>python -m http.server</code>)<br>o súbelo a GitHub Pages.</div>';
     }
   }
 
-  function loadLevel(idx, saved) {
+  function loadLevel(idx) {
     if (idx<0||idx>=state.levels.length) return;
     const lvl=state.levels[idx];
     const markers = new Set(lvl.allMarkers);
@@ -355,8 +356,9 @@
     for (const g of lvl.goals) {
       if (g.type==='seq') seqVisited[g.markers.join('>')] = new Set();
     }
-    // Restore saved board state if available and NOT already won
-    const useSaved = saved && saved.board && !saved.won && saved.board.length === lvl.H && saved.board[0].length === lvl.W;
+    // Look up saved position for this level (fresh from localStorage)
+    const saved = getSavedPosition(idx);
+    const useSaved = saved && saved.board && saved.board.length === lvl.H && saved.board[0].length === lvl.W;
     Object.assign(state,{
       levelIndex:idx, viewBlack: useSaved ? saved.viewBlack : !!lvl.viewBlack,
       markers, allMarkers:lvl.allMarkers,
@@ -488,15 +490,6 @@
   btnNextWin.onclick=()=>{if(state.levelIndex<state.levels.length-1)loadLevel(state.levelIndex+1);};
   btnUndo.onclick=undo;
   btnReset.onclick=reset;
-  // ── Reset progress ──
-  const btnResetProgress = document.getElementById('btn-reset-progress');
-  if (btnResetProgress) {
-    btnResetProgress.onclick = () => {
-      if (confirm('¿Borrar todo el progreso? Se perderán los niveles completados y la posición actual.')) {
-        resetProgress();
-      }
-    };
-  }
 
   // ── Toast ──
   let toastTmr;
